@@ -2,6 +2,7 @@ import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset
+from network import DEEPCNN
 from typing import List, Callable
 import torch.nn as nn
 import matplotlib.pyplot as plt
@@ -14,80 +15,83 @@ def collate_fn(batch_list : List[tuple[torch.Tensor, int]]):
     return torch.stack(images), torch.tensor(labels)
 
 
-class CNNBlock(nn.Module):
-    def __init__(self, in_channels : int = 1,
-                 out_channels : int = 1,
-                 ):
-        super().__init__()
-        self.relu = nn.functional.relu
-        self.normalization_fn = nn.BatchNorm2d(out_channels)
-        self.conv = nn.Conv2d(in_channels=in_channels,out_channels=out_channels, kernel_size=3, padding="same", padding_mode= "zeros")
-        # self.pool = nn.MaxPool2d(in_channels= out_channels, kernel_size=)
-
-    def forward(self, x):
-        # print(x.shape)
-        x = self.conv(x)
-        x = self.normalization_fn(x)
-        x= self.relu(x)
-        return x
-    
-
-
-class MLPHead(nn.Module):
-    def __init__(self, input_size, output_size, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.flatten = nn.Flatten()
-        self.layer1 = nn.Linear(in_features=input_size, out_features = 32)
-        self.layer2 = nn.Linear(32 , output_size)
-        self.relu = nn.functional.relu
-    def forward(self, x):
-        x = self.flatten(x)
-        x = self.layer1(x)
-        x = self.relu(x)
-        x = self.layer2(x)
-
-        return x 
-
-
-
-class DEEPCNN(nn.Module):
-    def __init__(self, inner_channels, num_inner_blocks: int = 1, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.first_layer = CNNBlock(in_channels=1, out_channels=inner_channels)
-        self.blocks = nn.ModuleList([
-                            CNNBlock(inner_channels, inner_channels)
-                            for _ in range(num_inner_blocks)])
-        self.depth = num_inner_blocks
-        self.relu = nn.functional.relu
-        self.final_layer = MLPHead(input_size= inner_channels * 32 * 32, output_size=10)
-        
-
-    def forward(self, x):
-        x = self.first_layer(x)
-        for block in self.blocks:
-            x = block(x)
-        x = self.final_layer(x)
-        return x
-        
-
 
 def train_one_epoch(model : nn.Module, optimizer , loss_fn, loader : DataLoader, device : torch.device):
     model.train()
+    cumulative_loss = 0
+    accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=10)
+    recall = torchmetrics.Recall(task="multiclass", num_classes=10)
+    precision = torchmetrics.Precision(task="multiclass", num_classes=10)
+    f1 = torchmetrics.F1Score(task="multiclass", num_classes=10)
+    auc = torchmetrics.AUROC(task="multiclass", num_classes=10)
+
     for images, labels in loader:
+        # print("hello")
         images = images.to(device)
         y = labels.to(device)
         
         optimizer.zero_grad()
-        yhat = model(images)
-        loss = loss_fn(yhat, y)
+        logits = model(images)
+        loss = loss_fn(logits, y)
         loss.backward()
         optimizer.step()
 
+        with torch.no_grad():
+            # print("aurgh")
+            probs = torch.sigmoid(logits)
+            cumulative_loss += len(labels) * loss.item()
+            # print("a")
+            accuracy.update(probs, y)
+            recall.update(probs, y)
+            precision.update(probs, y)
+            f1.update(probs, y)
+            auc.update(probs, y)
+
+    return {
+        "loss" : cumulative_loss / len(loader.dataset),
+        "accuracy" : accuracy.compute().item(),
+        "recall" : recall.compute().item(),
+        "precision" : precision.compute().item(),
+        "f1" : f1.compute().item(),
+        "auc" : auc.compute().item(),
+
+    }
 
 
+def validate(model : nn.Module, loss_fn, loader : DataLoader, device : torch.device):
+    model.eval()
+    cumulative_loss = 0
+    accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=10)
+    recall = torchmetrics.Recall(task="multiclass", num_classes=10)
+    precision = torchmetrics.Precision(task="multiclass", num_classes=10)
+    f1 = torchmetrics.F1Score(task="multiclass", num_classes=10)
+    auc = torchmetrics.AUROC(task="multiclass", num_classes=10)
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            y = labels.to(device)
+            logits = model(images)
+            loss = loss_fn(logits, y)
 
-def validate():
-    pass
+            probs = torch.sigmoid(logits)
+            cumulative_loss += len(labels) * loss.item()
+            accuracy.update(probs, y)
+            recall.update(probs, y)
+            precision.update(probs, y)
+            f1.update(probs, y)
+            auc.update(probs, y)
+
+    return {
+        "loss" : cumulative_loss / len(loader.dataset),
+        "accuracy" : accuracy.compute().item(),
+        "recall" : recall.compute().item(),
+        "precision" : precision.compute().item(),
+        "f1" : f1.compute().item(),
+        "auc" : auc.compute().item(),
+
+    }
+
+    
 
 
 def main():
@@ -112,9 +116,10 @@ def main():
     model = DEEPCNN(inner_channels=4, num_inner_blocks=3).to(device)
     run.watch(models=model, log="gradients", log_freq=1000)
     optimizer = torch.optim.Adam(model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
-    loss_fn = nn.functional.cross_entropy
+    loss_fn = nn.CrossEntropyLoss()
 
     checkpoint = config["model"]["checkpoint_path"] + "latest.pth"
+    os.mkdir(config["model"]["checkpoint_path"])
     if os.path.exists(checkpoint):
         checkpoint_dict = torch.load(checkpoint, map_location = device)
         model.load_state_dict(checkpoint_dict["model_state"])
@@ -142,6 +147,7 @@ def main():
     for epoch in range(current_epoch, config["num_epochs"]):
 
         if epoch % 10 == 0:
+            os.mkdir(checkpoint)
             state_dict = {
                 "model_state" : model.state_dict(),
                 "optimizer_state" : optimizer.state_dict(),
@@ -153,26 +159,29 @@ def main():
             artifact.add_file(checkpoint)
             run.log_artifact(artifact)
 
-        train_one_epoch(model = model, optimizer=optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
+        epoch_train = train_one_epoch(model = model, optimizer=optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
+        epoch_val = validate(model = model, loss_fn=loss_fn, loader=testloader, device = device)
+        run.log({
+                    "epoch": epoch,
 
-        run.log(
-            {
-                "epoch" : epoch,
-                "train_loss" : 1,
-                "val_loss" : 1
-            }
-        )
+                    # train
+                    "train_loss": epoch_train["loss"],
+                    "train_accuracy": epoch_train["accuracy"],
+                    "train_recall": epoch_train["recall"],
+                    "train_precision": epoch_train["precision"],
+                    "train_f1": epoch_train["f1"],
+                    "train_auc": epoch_train["auc"],
 
-
-
-
-
-
-
-
+                    # val
+                    "val_loss": epoch_val["loss"],
+                    "val_accuracy": epoch_val["accuracy"],
+                    "val_recall": epoch_val["recall"],
+                    "val_precision": epoch_val["precision"],
+                    "val_f1": epoch_val["f1"],
+                    "val_auc": epoch_val["auc"],
+                })
 
 
 
 if __name__ == "__main__":
-    # test()
     main()

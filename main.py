@@ -111,7 +111,7 @@ def main():
         },
     })
     config = run.config
-    current_epoch = 1
+    current_epoch = 0
 
     model = DEEPCNN(inner_channels=4, num_inner_blocks=3).to(device)
     run.watch(models=model, log="gradients", log_freq=1000)
@@ -119,7 +119,7 @@ def main():
     loss_fn = nn.CrossEntropyLoss()
 
     checkpoint = config["model"]["checkpoint_path"] + "latest.pth"
-    os.mkdir(config["model"]["checkpoint_path"])
+    os.makedirs(config["model"]["checkpoint_path"], exist_ok=True)
     if os.path.exists(checkpoint):
         checkpoint_dict = torch.load(checkpoint, map_location = device)
         model.load_state_dict(checkpoint_dict["model_state"])
@@ -147,7 +147,6 @@ def main():
     for epoch in range(current_epoch, config["num_epochs"]):
 
         if epoch % 10 == 0:
-            os.mkdir(checkpoint)
             state_dict = {
                 "model_state" : model.state_dict(),
                 "optimizer_state" : optimizer.state_dict(),

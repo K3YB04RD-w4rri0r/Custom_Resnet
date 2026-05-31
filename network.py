@@ -5,7 +5,7 @@ class CNNBlock(nn.Module):
                  out_channels : int = 1,
                  ):
         super().__init__()
-        self.relu = nn.functional.relu
+        self.lrelu = nn.LeakyReLU()
         self.normalization_fn = nn.BatchNorm2d(out_channels)
         self.conv = nn.Conv2d(in_channels=in_channels,out_channels=out_channels, kernel_size=3, padding="same", padding_mode= "zeros")
         # self.pool = nn.MaxPool2d(in_channels= out_channels, kernel_size=)
@@ -14,7 +14,7 @@ class CNNBlock(nn.Module):
         # print(x.shape)
         x = self.conv(x)
         x = self.normalization_fn(x)
-        x= self.relu(x)
+        x= self.lrelu(x)
         return x
     
 
@@ -25,11 +25,11 @@ class MLPHead(nn.Module):
         self.flatten = nn.Flatten()
         self.layer1 = nn.Linear(in_features=input_size, out_features = 32)
         self.layer2 = nn.Linear(32 , output_size)
-        self.relu = nn.functional.relu
+        self.lrelu = nn.LeakyReLU()
     def forward(self, x):
         x = self.flatten(x)
         x = self.layer1(x)
-        x = self.relu(x)
+        x = self.lrelu(x)
         x = self.layer2(x)
 
         return x 
@@ -44,7 +44,7 @@ class DEEPCNN(nn.Module):
                             CNNBlock(inner_channels, inner_channels)
                             for _ in range(num_inner_blocks)])
         self.depth = num_inner_blocks
-        self.relu = nn.functional.relu
+        self.lrelu = nn.LeakyReLU()
         self.final_layer = MLPHead(input_size= inner_channels * 32 * 32, output_size=10)
         
 

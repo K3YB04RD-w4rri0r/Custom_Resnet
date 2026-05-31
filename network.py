@@ -58,23 +58,42 @@ class DEEPCNN(nn.Module):
         
 
 class BasicResBlock(nn.Module):
-    def __init__(self, in_channels : int, stride : int = 1, expansion : int = 1):
+    def __init__(self, in_channels : int, out_channels , stride : int = 1, expansion : int = 1):
         super().__init__()
-        self.normalization_fn = nn.BatchNorm2d(num_features=in_channels)
+        self.normalization_fn1 = nn.BatchNorm2d(num_features=out_channels)
+        self.normalization_fn2 = nn.BatchNorm2d(num_features=out_channels * expansion)
         self.relu = nn.ReLU()
-        self.layer1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels
-                                , kernel_size=3, padding = "same", padding_mode="zeros")
-        self.layer2 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels
-                                , kernel_size=3, padding = "same", padding_mode="zeros")
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.expansion = expansion
+        self.stride = stride
+
+
+
+        self.layer1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels
+                                , kernel_size=3, padding = 3 // 2, padding_mode="zeros")
+        
+        if self.in_channels != self.out_channels or self.expansion != 1 or self.stride != 1:
+            self.shortcut = nn.Conv2d(in_channels=in_channels, out_channels=out_channels * expansion
+                                    , kernel_size=1, padding = 1 // 2, padding_mode="zeros", stride = stride)
+        else:
+            self.shortcut = nn.Identity()
+
+        self.layer2 = nn.Conv2d(in_channels=out_channels * expansion, out_channels=out_channels * expansion
+                                , kernel_size=3, padding = 3 // 2, padding_mode="zeros", stride = stride)
         
 
     def forward(self, x : torch.Tensor):
+
+        skip = self.shortcut(x)
+
+
         x = self.layer1(x)
-        x = self.normalization_fn(x)
+        x = self.normalization_fn1(x)
         x = self.relu(x)
-        skip = x.view(x.shape)
         x = self.layer2(x)
-        x = self.normalization_fn(x) + skip
+        x = self.normalization_fn2(x) + skip
         x = self.relu(x)
 
         return x
@@ -83,6 +102,6 @@ class BasicResBlock(nn.Module):
 
 if __name__ == "__main__":
     x = torch.randn(size = (5,64,56,56))
-    block = BasicResBlock(in_channels=64, stride = 1)
+    block = BasicResBlock(in_channels=64, out_channels = 5, stride = 2, expansion=5)
     y = block(x)
     assert x.shape == y.shape

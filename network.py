@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 
 class CNNBlock(nn.Module):
     def __init__(self, in_channels : int = 1,
@@ -56,3 +57,32 @@ class DEEPCNN(nn.Module):
         return x
         
 
+class BasicResBlock(nn.Module):
+    def __init__(self, in_channels : int, stride : int = 1, expansion : int = 1):
+        super().__init__()
+        self.normalization_fn = nn.BatchNorm2d(num_features=in_channels)
+        self.relu = nn.ReLU()
+        self.layer1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels
+                                , kernel_size=3, padding = "same", padding_mode="zeros")
+        self.layer2 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels
+                                , kernel_size=3, padding = "same", padding_mode="zeros")
+        
+
+    def forward(self, x : torch.Tensor):
+        x = self.layer1(x)
+        x = self.normalization_fn(x)
+        x = self.relu(x)
+        skip = x.view(x.shape)
+        x = self.layer2(x)
+        x = self.normalization_fn(x) + skip
+        x = self.relu(x)
+
+        return x
+    
+
+
+if __name__ == "__main__":
+    x = torch.randn(size = (5,64,56,56))
+    block = BasicResBlock(in_channels=64, stride = 1)
+    y = block(x)
+    assert x.shape == y.shape

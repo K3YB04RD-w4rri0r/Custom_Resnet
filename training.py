@@ -2,7 +2,7 @@ import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
-from network import DEEPCNN
+from network import DEEPCNN, CustomResNet, BottleneckBlock, BasicResBlock
 from typing import List
 import torch.nn as nn
 import wandb
@@ -109,9 +109,11 @@ def main():
         "gpu_id" : 1,
         "model" : {
             "checkpoint_path" : "checkpoints/",
-            "architecture" : "Deepnet_2",
-            "inner_channels" : 64,
-            "inner_blocks" : 2,
+            "architecture" : "Resnet_18",
+            "in_channels" : 3,
+            "num_classes" : 10,
+            "schema" : [(3,64,1,4),(4,128,2,4),(6,256,2,4),(3,512,2,4)],
+            "block_type" : BottleneckBlock,
             
         },
 
@@ -120,12 +122,17 @@ def main():
             "betas" : (0.9,0.999)
         },
     })
+
+    
     config = run.config
     device = f"cuda:{config['gpu_id']}" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(config["seed"])
     current_epoch = 0
 
-    model = DEEPCNN(inner_channels=config["model"]["inner_channels"], num_inner_blocks=config["model"]["inner_blocks"]).to(device)
+    # model = DEEPCNN(inner_channels=config["model"]["inner_channels"], num_inner_blocks=config["model"]["inner_blocks"]).to(device)
+    model = CustomResNet(in_channels=config["model"]["in_channels"], num_classes=config["model"]["num_classes"], schema = config["model"]["schema"], block_type=config["model"]["block_type"])
+    
+
     run.watch(model, log="gradients", log_freq=100)
     optimizer = torch.optim.Adam(model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
     loss_fn = nn.CrossEntropyLoss()

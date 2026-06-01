@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+from typing import List
 
 class CNNBlock(nn.Module):
     def __init__(self, in_channels : int = 1,
@@ -142,24 +143,72 @@ class BottleneckBlock(nn.Module):
         x = self.layer3(x)
         x = self.normalization_fn3(x) + skip
         x = self.relu(x)
+        return x
+
+
+
+class CustomResNet(nn.Module):
+    def __init__(self, in_channels : int, num_classes : int,  schema : List[tuple[int, int, int, int]], block_type : BasicResBlock):
+        super().__init__()
+        self.block_type = block_type
+        self.construction_schema = schema
+
+        
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels = 64, kernel_size = 7, stride=2, padding = 7//2),
+            nn.BatchNorm2d(num_features=64),
+            nn.ReLU(),
+            nn.MaxPool2d(3,2,1))
+        
+        self.inner_blocks, self.inner_blocks_output_channels = self.__make__()
+        
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_features=self.inner_blocks_output_channels, out_features=16),
+            nn.BatchNorm1d(num_features=16),
+            nn.ReLU(),
+            nn.Linear(in_features=16, out_features=num_classes),
+        )
+
+
+    def __make__(self):
+        modules = []
+        input_channels = 64 # applied after the first 7*7 convolution
+        for blocks, red_channels, stride, expansion in self.construction_schema:
+            for i in range(blocks):
+                modules.append(self.block_type(in_channels=input_channels, red_channels=red_channels, stride = stride if i == 0 else 1, expansion=expansion))
+                input_channels = red_channels * expansion
+        return nn.Sequential(*modules), input_channels
+
+    def forward(self, x):
+        x = self.stem(x)
+        x = self.inner_blocks(x)
+        x = self.head(x)
 
         return x
-    
-    
 
+
+
+
+
+
+    
 def parameter_count(model : nn.Module):
     trainable_params = 0
-    for name, p in model.named_parameters():
+    for _, p in model.named_parameters():
         trainable_params += p.numel() 
     return trainable_params
 
+
+
+
 if __name__ == "__main__":
-    x = torch.randn(size = (5,64,56,56))
-    basic_block = BasicResBlock(in_channels=64, red_channels=32, stride = 1, expansion=2)
-    bottleneck_block = BottleneckBlock(in_channels=64, red_channels = 32, stride = 1, expansion=2)
-    print(parameter_count(bottleneck_block))
-    print(parameter_count(basic_block))
-    z = basic_block(x)
-    y = bottleneck_block(x)
-    assert x.shape == y.shape, "x and y don't match"
-    assert x.shape == z.shape, "x and z don't match"
+    model = CustomResNet(
+    in_channels=3,
+    num_classes=10,
+    schema=[(3,64,1,4),(4,128,2,4),(6,256,2,4),(3,512,2,4)],
+    block_type=BottleneckBlock)
+    x = torch.randn(5, 3, 224, 224)
+    out = model(x)
+    assert out.shape == (5, 10), f"Expected (5,10), got {out.shape}"

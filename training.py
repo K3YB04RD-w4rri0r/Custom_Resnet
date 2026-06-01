@@ -103,7 +103,7 @@ def validate(model : nn.Module, loss_fn, loader : DataLoader, device : str):
 
 
 def main():
-    run = wandb.init(project="ResNet", config = {
+    CONFIG_RESNET =  {
         "num_epochs" : 50,
         "seed" : 0,
         "gpu_id" : 1,
@@ -121,7 +121,27 @@ def main():
             "lr" :  1e-3,
             "betas" : (0.9,0.999)
         },
-    })
+    }
+    CONFIG_CNN = {
+        "num_epochs" : 50,
+        "seed" : 0,
+        "gpu_id" : 1,
+        "model" : {
+            "checkpoint_path" : "checkpoints/",
+            "architecture" : "DeepCNN_50",
+            "in_channels" : 3,
+            "inner_channels" : 64, 
+            "num_inner_blocks" : 48
+            
+        },
+
+        "optimizer" : {
+            "lr" :  1e-3,
+            "betas" : (0.9,0.999)
+        },
+    }
+
+    run = wandb.init(project="ResNet", config=CONFIG_CNN)
 
     
     config = run.config
@@ -129,29 +149,25 @@ def main():
     torch.manual_seed(config["seed"])
     current_epoch = 0
     
-    resnet_model = CustomResNet(in_channels=config["model"]["in_channels"], num_classes=config["model"]["num_classes"], schema = config["model"]["schema"], 
-    block_type= BasicResBlock if config["model"]["block_type"] == "basic" else BottleneckBlock)
-    run.watch(resnet_model, log="gradients", log_freq=100)
-    resnet_optimizer = torch.optim.Adam(resnet_model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
-    
 
+    if config["model"]["architecture"].startswith("Resnet"):
+        model = CustomResNet(in_channels=config["model"]["in_channels"], num_classes=config["model"]["num_classes"], schema = config["model"]["schema"], 
+        block_type= BasicResBlock if config["model"]["block_type"] == "basic" else BottleneckBlock).to(device)
+    else:
+        model = DEEPCNN(in_channels=config["model"]["in_channels"], inner_channels= config["model"]["inner_channels"], num_inner_blocks=config["model"]["num_inner_blocks"]).to(device)
 
-    """
-    CNN
-    """
-    cnn_model = DEEPCNN(inner_channels=64, num_inner_blocks=48).to(device)
-    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
-    
-
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
+    run.watch(model, log="gradients", log_freq=100)
     loss_fn = nn.CrossEntropyLoss()
+
+
 
     checkpoint = config["model"]["checkpoint_path"] + f"{config['model']['architecture']}.pth"
     os.makedirs(config["model"]["checkpoint_path"], exist_ok=True)
     if os.path.exists(checkpoint):
         checkpoint_dict = torch.load(checkpoint, map_location = device)
-        resnet_model.load_state_dict(checkpoint_dict["model_state"])
-        resnet_optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
+        model.load_state_dict(checkpoint_dict["model_state"])
+        optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
         current_epoch = checkpoint_dict["checkpoint_epoch"]
 
 
@@ -174,8 +190,8 @@ def main():
 
         if epoch % 10 == 0:
             state_dict = {
-                "model_state" : resnet_model.state_dict(),
-                "optimizer_state" : resnet_optimizer.state_dict(),
+                "model_state" : model.state_dict(),
+                "optimizer_state" : optimizer.state_dict(),
                 "checkpoint_epoch" : epoch,
             }
             torch.save(f=checkpoint, obj=state_dict)
@@ -187,8 +203,8 @@ def main():
 
 
         print(f"Current epoch : {epoch}")
-        epoch_train = train_one_epoch(model = resnet_model, optimizer=resnet_optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
-        epoch_val = validate(model = resnet_model, loss_fn=loss_fn, loader=testloader, device = device)
+        epoch_train = train_one_epoch(model = model, optimizer=optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
+        epoch_val = validate(model = model, loss_fn=loss_fn, loader=testloader, device = device)
         run.log({
                     "epoch": epoch,
 
@@ -208,32 +224,6 @@ def main():
                     "val_f1": epoch_val["f1"],
                     "val_auc": epoch_val["auc"],
                 })
-        
-        """
-        And for CNN
-        """
-        epoch_train = train_one_epoch(model = cnn_model, optimizer=cnn_optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
-        epoch_val = validate(model = cnn_model, loss_fn=loss_fn, loader=testloader, device = device)
-        run.log({
-                    "epoch": epoch,
-
-                    # train
-                    "train_loss": epoch_train["loss"],
-                    "train_accuracy": epoch_train["accuracy"],
-                    "train_recall": epoch_train["recall"],
-                    "train_precision": epoch_train["precision"],
-                    "train_f1": epoch_train["f1"],
-                    "train_auc": epoch_train["auc"],
-
-                    # val
-                    "val_loss": epoch_val["loss"],
-                    "val_accuracy": epoch_val["accuracy"],
-                    "val_recall": epoch_val["recall"],
-                    "val_precision": epoch_val["precision"],
-                    "val_f1": epoch_val["f1"],
-                    "val_auc": epoch_val["auc"],
-                })
-
 
 
 if __name__ == "__main__":

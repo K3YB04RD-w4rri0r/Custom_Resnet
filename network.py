@@ -39,9 +39,9 @@ class MLPHead(nn.Module):
 
 
 class DEEPCNN(nn.Module):
-    def __init__(self, inner_channels, num_inner_blocks: int = 1, *args, **kwargs):
+    def __init__(self, in_channels, inner_channels, num_inner_blocks: int = 1, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.first_layer = CNNBlock(in_channels=3, out_channels=inner_channels)
+        self.first_layer = CNNBlock(in_channels=in_channels, out_channels=inner_channels)
         self.blocks = nn.ModuleList([
                             CNNBlock(inner_channels, inner_channels)
                             for _ in range(num_inner_blocks)])

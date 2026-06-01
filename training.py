@@ -103,7 +103,7 @@ def validate(model : nn.Module, loss_fn, loader : DataLoader, device : str):
 
 
 def main():
-    run = wandb.init(project="ResNet", config = {
+    resnet_run = wandb.init(project="ResNet", config = {
         "num_epochs" : 300,
         "seed" : 0,
         "gpu_id" : 1,
@@ -113,7 +113,7 @@ def main():
             "in_channels" : 3,
             "num_classes" : 10,
             "schema" : [(3,64,1,4),(4,128,2,4),(6,256,2,4),(3,512,2,4)],
-            "block_type" : BottleneckBlock,
+            "block_type" : "baottleneck",
             
         },
 
@@ -124,25 +124,50 @@ def main():
     })
 
     
-    config = run.config
+    config = resnet_run.config
     device = f"cuda:{config['gpu_id']}" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(config["seed"])
     current_epoch = 0
 
-    # model = DEEPCNN(inner_channels=config["model"]["inner_channels"], num_inner_blocks=config["model"]["inner_blocks"]).to(device)
-    model = CustomResNet(in_channels=config["model"]["in_channels"], num_classes=config["model"]["num_classes"], schema = config["model"]["schema"], block_type=config["model"]["block_type"])
-    
 
-    run.watch(model, log="gradients", log_freq=100)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
+    resnet_model = CustomResNet(in_channels=config["model"]["in_channels"], num_classes=config["model"]["num_classes"], schema = config["model"]["schema"],
+                                 block_type=BasicResBlock if config["model"]["block_type"] == "basic" else BottleneckBlock)
+    resnet_run.watch(resnet_model, log="gradients", log_freq=100)
+    resnet_optimizer = torch.optim.Adam(resnet_model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
+
+
+
+
+
+
+
+
+
+
+    """
+    For CNN
+    """
+    cnn_run = wandb.init(project="ResNet")
+    cnn_model = DEEPCNN(inner_channels=64, num_inner_blocks=48).to(device)
+    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
+
+
+
+
+
+
+
+
+
+
     loss_fn = nn.CrossEntropyLoss()
 
     checkpoint = config["model"]["checkpoint_path"] + f"{config['model']['architecture']}.pth"
     os.makedirs(config["model"]["checkpoint_path"], exist_ok=True)
     if os.path.exists(checkpoint):
         checkpoint_dict = torch.load(checkpoint, map_location = device)
-        model.load_state_dict(checkpoint_dict["model_state"])
-        optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
+        resnet_model.load_state_dict(checkpoint_dict["model_state"])
+        resnet_optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
         current_epoch = checkpoint_dict["checkpoint_epoch"]
 
 
@@ -165,37 +190,65 @@ def main():
 
         if epoch % 10 == 0:
             state_dict = {
-                "model_state" : model.state_dict(),
-                "optimizer_state" : optimizer.state_dict(),
+                "model_state" : resnet_model.state_dict(),
+                "optimizer_state" : resnet_optimizer.state_dict(),
                 "checkpoint_epoch" : epoch,
             }
             torch.save(f=checkpoint, obj=state_dict)
 
             artifact = wandb.Artifact(name= f'{config["model"]["architecture"]}_state', type="model", metadata={"epoch" : epoch})
             artifact.add_file(checkpoint)
-            run.log_artifact(artifact)
+            resnet_run.log_artifact(artifact)
             print("Just uploaded model checkpoint")
         print(f"Current epoch : {epoch}")
-        epoch_train = train_one_epoch(model = model, optimizer=optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
-        epoch_val = validate(model = model, loss_fn=loss_fn, loader=testloader, device = device)
-        run.log({
+        resnet_epoch_train = train_one_epoch(model = resnet_model, optimizer=resnet_optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
+        resnet_epoch_val = validate(model = resnet_model, loss_fn=loss_fn, loader=testloader, device = device)
+        resnet_run.log({
                     "epoch": epoch,
 
                     # train
-                    "train_loss": epoch_train["loss"],
-                    "train_accuracy": epoch_train["accuracy"],
-                    "train_recall": epoch_train["recall"],
-                    "train_precision": epoch_train["precision"],
-                    "train_f1": epoch_train["f1"],
-                    "train_auc": epoch_train["auc"],
+                    "train_loss": resnet_epoch_train["loss"],
+                    "train_accuracy": resnet_epoch_train["accuracy"],
+                    "train_recall": resnet_epoch_train["recall"],
+                    "train_precision": resnet_epoch_train["precision"],
+                    "train_f1": resnet_epoch_train["f1"],
+                    "train_auc": resnet_epoch_train["auc"],
 
                     # val
-                    "val_loss": epoch_val["loss"],
-                    "val_accuracy": epoch_val["accuracy"],
-                    "val_recall": epoch_val["recall"],
-                    "val_precision": epoch_val["precision"],
-                    "val_f1": epoch_val["f1"],
-                    "val_auc": epoch_val["auc"],
+                    "val_loss": resnet_epoch_val["loss"],
+                    "val_accuracy": resnet_epoch_val["accuracy"],
+                    "val_recall": resnet_epoch_val["recall"],
+                    "val_precision": resnet_epoch_val["precision"],
+                    "val_f1": resnet_epoch_val["f1"],
+                    "val_auc": resnet_epoch_val["auc"],
+                })
+        
+
+
+
+
+
+
+        cnn_epoch_train = train_one_epoch(model = cnn_model, optimizer=cnn_optimizer, loss_fn=loss_fn, loader=trainloader, device = device)
+        cnn_epoch_val = validate(model = cnn_model, loss_fn=loss_fn, loader=testloader, device = device)
+        cnn_run.log({
+                    "epoch": epoch,
+
+                    # train
+                    "train_loss": cnn_epoch_train["loss"],
+                    "train_accuracy": cnn_epoch_train["accuracy"],
+                    "train_recall": cnn_epoch_train["recall"],
+                    "train_precision": cnn_epoch_train["precision"],
+                    "train_f1": cnn_epoch_train["f1"],
+                    "train_auc": cnn_epoch_train["auc"],
+
+                    # val
+                    "val_loss": cnn_epoch_val["loss"],
+                    "val_accuracy": cnn_epoch_val["accuracy"],
+                    "val_recall": cnn_epoch_val["recall"],
+                    "val_precision": cnn_epoch_val["precision"],
+                    "val_f1": cnn_epoch_val["f1"],
+                    "val_auc": cnn_epoch_val["auc"],
                 })
 
 

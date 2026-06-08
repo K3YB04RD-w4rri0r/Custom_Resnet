@@ -1,8 +1,10 @@
 import torch
+import torchvision
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from network import DEEPCNN, CustomResNet, BottleneckBlock, BasicResBlock
+from pretrained import ResNet, Bottleneck
 from typing import List
 import torch.nn as nn
 import wandb
@@ -140,8 +142,22 @@ def main():
             "betas" : (0.9,0.999)
         },
     }
+    CONFIG_IMPORTED = {"num_epochs" : 50,
+        "seed" : 0,
+        "gpu_id" : 1,
+        "model" : {
+            "checkpoint_path" : "checkpoints/",
+            "architecture" : "Imported_resnet50",
+        },
 
-    run = wandb.init(project="ResNet", config=CONFIG_CNN)
+        "optimizer" : {
+            "lr" :  1e-3,
+            "betas" : (0.9,0.999)
+        },
+
+    }
+    
+    run = wandb.init(project="ResNet", config=CONFIG_IMPORTED)
 
     
     config = run.config
@@ -153,8 +169,12 @@ def main():
     if config["model"]["architecture"].startswith("Resnet"):
         model = CustomResNet(in_channels=config["model"]["in_channels"], num_classes=config["model"]["num_classes"], schema = config["model"]["schema"], 
         block_type= BasicResBlock if config["model"]["block_type"] == "basic" else BottleneckBlock).to(device)
-    else:
+    
+    elif config["model"]["architecture"].startswith("Deep"):
         model = DEEPCNN(in_channels=config["model"]["in_channels"], inner_channels= config["model"]["inner_channels"], num_inner_blocks=config["model"]["num_inner_blocks"]).to(device)
+
+    elif config["model"]["architecture"].startswith("Imported"):
+        model = ResNet(block=Bottleneck, layers=[3,4,6,3], num_classes=10)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
     run.watch(model, log="gradients", log_freq=100)
@@ -166,9 +186,17 @@ def main():
     os.makedirs(config["model"]["checkpoint_path"], exist_ok=True)
     if os.path.exists(checkpoint):
         checkpoint_dict = torch.load(checkpoint, map_location = device)
-        model.load_state_dict(checkpoint_dict["model_state"])
-        optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
-        current_epoch = checkpoint_dict["checkpoint_epoch"]
+        if config["model"]["architecture"].startswith("Imported"):
+            try:
+                model_state_dict = checkpoint_dict["model_state"]
+                model_state_dict = {k: v for k, v in state_dict.items() if not k.startswith("fc.")}
+                model.load_state_dict(model_state_dict, strict = False)
+            except Exception as e:
+                print("Error : ", e)
+        else:
+            model.load_state_dict(checkpoint_dict["model_state"])
+            optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
+            current_epoch = checkpoint_dict["checkpoint_epoch"]
 
 
     transform_train = transforms.Compose([
@@ -176,6 +204,8 @@ def main():
         transforms.RandomRotation(20),
         transforms.ToTensor(),
     ])
+
+
     trainset = datasets.CIFAR10(root='./data', train=True, transform=transform_train, download=True)
     trainloader = DataLoader(trainset, batch_size=32, collate_fn=collate_fn, shuffle = True)
 

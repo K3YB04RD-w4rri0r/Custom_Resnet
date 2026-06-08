@@ -1,5 +1,4 @@
 import torch
-import torchvision
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -11,6 +10,7 @@ import wandb
 import os
 import torchmetrics
 from typing import Sized
+from audit import check_parameter_count
 
 def collate_fn(batch_list : List[tuple[torch.Tensor, int]]):
     images, labels = zip(*batch_list)
@@ -101,12 +101,12 @@ def validate(model : nn.Module, loss_fn, loader : DataLoader, device : str):
 
     }
 
-    
+
 
 
 def main():
-    CONFIG_RESNET =  {
-        "num_epochs" : 50,
+    CONFIG_RESNET =  {  # noqa: F841
+        "num_epochs" : 100,
         "seed" : 0,
         "gpu_id" : 1,
         "model" : {
@@ -124,8 +124,8 @@ def main():
             "betas" : (0.9,0.999)
         },
     }
-    CONFIG_CNN = {
-        "num_epochs" : 50,
+    CONFIG_CNN = {  # noqa: F841
+        "num_epochs" : 100,
         "seed" : 0,
         "gpu_id" : 1,
         "model" : {
@@ -142,12 +142,12 @@ def main():
             "betas" : (0.9,0.999)
         },
     }
-    CONFIG_IMPORTED = {"num_epochs" : 50,
+    CONFIG_IMPORTED = {"num_epochs" : 100,
         "seed" : 0,
         "gpu_id" : 1,
         "model" : {
             "checkpoint_path" : "checkpoints/",
-            "architecture" : "Imported_resnet50",
+            "architecture" : "Imported_resnet_50",
         },
 
         "optimizer" : {
@@ -174,8 +174,9 @@ def main():
         model = DEEPCNN(in_channels=config["model"]["in_channels"], inner_channels= config["model"]["inner_channels"], num_inner_blocks=config["model"]["num_inner_blocks"]).to(device)
 
     elif config["model"]["architecture"].startswith("Imported"):
-        model = ResNet(block=Bottleneck, layers=[3,4,6,3], num_classes=10)
+        model = ResNet(block=Bottleneck, layers=[3,4,6,3], num_classes=10).to(device)
 
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=config["optimizer"]["lr"], betas=config["optimizer"]["betas"])
     run.watch(model, log="gradients", log_freq=100)
     loss_fn = nn.CrossEntropyLoss()
@@ -189,14 +190,24 @@ def main():
         if config["model"]["architecture"].startswith("Imported"):
             try:
                 model_state_dict = checkpoint_dict["model_state"]
-                model_state_dict = {k: v for k, v in state_dict.items() if not k.startswith("fc.")}
+                model_state_dict = {k: v for k, v in model_state_dict.items() if not k.startswith("fc.")}
                 model.load_state_dict(model_state_dict, strict = False)
+
+                for param in model.parameters():
+                    param.requires_grad = False
+
+                for param in model.fc.parameters():
+                    param.requires_grad = True
+
+
             except Exception as e:
                 print("Error : ", e)
         else:
             model.load_state_dict(checkpoint_dict["model_state"])
             optimizer.load_state_dict(checkpoint_dict["optimizer_state"])
             current_epoch = checkpoint_dict["checkpoint_epoch"]
+
+    check_parameter_count(model=model)    
 
 
     transform_train = transforms.Compose([
@@ -229,7 +240,7 @@ def main():
             artifact = wandb.Artifact(name= f'{config["model"]["architecture"]}_state', type="model", metadata={"epoch" : epoch})
             artifact.add_file(checkpoint)
             run.log_artifact(artifact)
-            print("Just uploaded model checkpoint")
+            print("Just uploaded model checkpoint to : ", checkpoint)
 
 
         print(f"Current epoch : {epoch}")

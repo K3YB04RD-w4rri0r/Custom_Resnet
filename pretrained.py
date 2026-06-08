@@ -3,10 +3,9 @@ import torch
 import os
 
 
-from functools import partial
-from typing import Any, Callable, Optional, Union
+from typing import Callable, Optional, Union
 
-import torch
+
 import torch.nn as nn
 from torch import Tensor
 
@@ -288,7 +287,10 @@ def inspect_state_dict(path):
 
 
 if __name__ == "__main__":
-    inspect_state_dict("checkpoints/Imported_resnet50.pth")
+    resnet50 = models.resnet50(pretrained = True)
+    torch.save({"model_state" : resnet50.state_dict()} , "checkpoints/Imported_resnet_50.pth")
+
+    inspect_state_dict("checkpoints/Imported_resnet_50.pth")
     # print("MY_RESNET")
     # inspect_state_dict("checkpoints/Resnet_50.pth")
 

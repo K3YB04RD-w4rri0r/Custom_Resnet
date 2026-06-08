@@ -165,10 +165,7 @@ class CustomResNet(nn.Module):
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(in_features=self.inner_blocks_output_channels, out_features=16),
-            nn.BatchNorm1d(num_features=16),
-            nn.ReLU(),
-            nn.Linear(in_features=16, out_features=num_classes),
+            nn.Linear(in_features=self.inner_blocks_output_channels, out_features=num_classes),
         )
 
 

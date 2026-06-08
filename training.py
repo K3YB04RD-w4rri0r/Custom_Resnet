@@ -190,12 +190,13 @@ def main():
         if config["model"]["architecture"].startswith("Imported"):
             try:
                 model_state_dict = checkpoint_dict["model_state"]
-                model_state_dict = {k: v for k, v in model_state_dict.items() if not k.startswith("fc.")}
+                model_state_dict = {k: v for k, v in model_state_dict.items() if ((not k.startswith("fc.")) and (not k.startswith("conv1.")))}
                 model.load_state_dict(model_state_dict, strict = False)
 
                 for param in model.parameters():
                     param.requires_grad = False
-
+                for param in model.conv1.parameters():
+                    param.requires_grad = True
                 for param in model.fc.parameters():
                     param.requires_grad = True
 
@@ -214,6 +215,7 @@ def main():
         transforms.Resize(size=(32,32)),
         transforms.RandomRotation(20),
         transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
 
@@ -223,6 +225,7 @@ def main():
     transform_test = transforms.Compose([
         transforms.Resize(size=(32,32)),
         transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     testset = datasets.CIFAR10(root='./data', train=False, transform=transform_test)
     testloader = DataLoader(testset, batch_size=32, collate_fn=collate_fn, shuffle = False)

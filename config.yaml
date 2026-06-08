@@ -1,0 +1,38 @@
+seed: 0
+gpu_id: 1
+
+augmentations:
+  train:
+    - name: ResizeCrop
+    - name: HorizontalFlip
+    - name: ColorJitter
+
+experiment_configs:
+  num_epochs: 100
+  checkpoint_path: checkpoints/
+
+  models:
+    DEEPCNN:
+      architecture: DeepCNN_50
+      in_channels: 3
+      inner_channels: 64
+      num_inner_blocks: 48
+
+    CustomResnet:
+      in_channels: 3
+      num_classes: 10
+      schema:
+        - [3, 64, 1, 4]
+        - [4, 128, 2, 4]
+        - [6, 256, 2, 4]
+        - [3, 512, 2, 4]
+      block_type: bottleneck
+
+      
+    ImportedNet:
+      architecture : Imported_resnet_50
+
+  optimizers:
+    - name: Adam
+      lr: 0.001
+      betas: [0.9, 0.99]
